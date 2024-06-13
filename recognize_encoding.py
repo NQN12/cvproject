@@ -7,6 +7,7 @@ import face_recognition
 from openpyxl import Workbook, load_workbook
 import pickle
 import numpy as np
+
 # Parse command-line arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-o", "--output", required=True, help="path to output directory")
@@ -54,12 +55,14 @@ while True:
     rgb = cv2.resize(rgb, (750, int(frame.shape[0] * 750 / frame.shape[1])))
     scale = frame.shape[1] / float(rgb.shape[1])
 
+    # Detect the (x, y)-coordinates of the bounding boxes corresponding to each face in the input image
     boxes = face_recognition.face_locations(rgb, model=args["detection_method"])
     encodings = face_recognition.face_encodings(rgb, boxes)
-    
+
     current_detections = []
 
     for encoding in encodings:
+        # Compare the encoding against known encodings
         matches = face_recognition.compare_faces(data["encodings"], encoding)
         face_distances = face_recognition.face_distance(data["encodings"], encoding)
         best_match_index = np.argmin(face_distances)
@@ -97,7 +100,7 @@ while True:
 
         cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
         y = top - 15 if top - 15 > 15 else top + 15
-        text = f"{name}: {confidence+0.1:.2f}"
+        text = f"{name}: {confidence:.2f}"
         cv2.putText(frame, text, (left, y), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
 
     cv2.imshow("video", frame)

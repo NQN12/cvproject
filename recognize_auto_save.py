@@ -7,6 +7,7 @@ import face_recognition
 from openpyxl import Workbook, load_workbook
 import pickle
 import numpy as np
+
 # Parse command-line arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-o", "--output", required=True, help="path to output directory")
@@ -41,8 +42,11 @@ time.sleep(2.0)
 
 # Timer and counter setup
 detection_intervals = {}
+consecutive_detections = {}
+last_captured_times = {}
 CONSECUTIVE_DETECTION_THRESHOLD = 5
 DETECTION_INTERVAL = 1  # seconds
+MIN_TIME_BETWEEN_CAPTURES = 120  # seconds
 
 # Main loop
 while True:
@@ -72,21 +76,27 @@ while True:
 
         current_detections.append((name, confidence))
 
+    # Update detection intervals and consecutive detections
     for (name, confidence) in current_detections:
         if name not in detection_intervals:
             detection_intervals[name] = 0
         detection_intervals[name] += 1
-    
-    # Check for people who have been detected for the required amount of time
-    for name, count in list(detection_intervals.items()):
-        if count >= CONSECUTIVE_DETECTION_THRESHOLD:
-            timestamp = datetime.datetime.now()
-            filename = f"{timestamp.strftime('%Y%m%d_%H%M%S%f')}.png"
-            file_path = os.path.join(args["output"], filename)
-            cv2.imwrite(file_path, frame)
-            sheet.append([timestamp.strftime('%Y-%m-%d %H:%M:%S'), name, file_path, confidence])
-            workbook.save(args["excel"])
-            del detection_intervals[name]  # Reset the counter after writing to the Excel file
+
+        if name not in consecutive_detections:
+            consecutive_detections[name] = 0
+        consecutive_detections[name] += 1
+
+        current_time = datetime.datetime.now()
+
+        if name not in last_captured_times or (current_time - last_captured_times[name]).total_seconds() > MIN_TIME_BETWEEN_CAPTURES:
+            if consecutive_detections[name] >= CONSECUTIVE_DETECTION_THRESHOLD:
+                filename = f"{current_time.strftime('%Y%m%d_%H%M%S%f')}.png"
+                file_path = os.path.join(args["output"], filename)
+                cv2.imwrite(file_path, frame)
+                sheet.append([current_time.strftime('%Y-%m-%d %H:%M:%S'), name, file_path, confidence])
+                workbook.save(args["excel"])
+                consecutive_detections[name] = 0  # Reset the counter after writing to the Excel file
+                last_captured_times[name] = current_time  # Update the last captured time
 
     # Draw bounding boxes, names, and confidence scores on the frame
     for ((top, right, bottom, left), (name, confidence)) in zip(boxes, current_detections):
