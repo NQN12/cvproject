@@ -14,6 +14,7 @@ ap.add_argument("-o", "--output", required=True, help="path to output directory"
 ap.add_argument("--excel", type=str, default="faces.xlsx", help="path to the Excel file")
 ap.add_argument("--encodings", required=True, help="path to the serialized db of facial encodings")
 ap.add_argument("-d", "--detection_method", type=str, default="hog", help="face detection model to use: cnn or hog")
+ap.add_argument("--confidence_threshold", type=float, default=0.6, help="minimum confidence threshold for recognizing a face")
 args = vars(ap.parse_args())
 
 # Create output directory if it doesn't exist
@@ -64,15 +65,16 @@ while True:
     current_detections = []
 
     for encoding in encodings:
-        matches = face_recognition.compare_faces(data["encodings"], encoding)
+        matches = face_recognition.compare_faces(data["encodings"], encoding, tolerance=1-args["confidence_threshold"])
         face_distances = face_recognition.face_distance(data["encodings"], encoding)
         best_match_index = np.argmin(face_distances)
         name = "Unknown"
         confidence = 0
 
         if matches[best_match_index]:
-            name = data["names"][best_match_index]
             confidence = 1 - face_distances[best_match_index]  # Confidence score
+            if confidence >= args["confidence_threshold"]:
+                name = data["names"][best_match_index]
 
         current_detections.append((name, confidence))
 
@@ -88,15 +90,22 @@ while True:
 
         current_time = datetime.datetime.now()
 
+        # Check if enough time has passed since the last capture
         if name not in last_captured_times or (current_time - last_captured_times[name]).total_seconds() > MIN_TIME_BETWEEN_CAPTURES:
             if consecutive_detections[name] >= CONSECUTIVE_DETECTION_THRESHOLD:
                 filename = f"{current_time.strftime('%Y%m%d_%H%M%S%f')}.png"
                 file_path = os.path.join(args["output"], filename)
                 cv2.imwrite(file_path, frame)
+                
+                # Append data to the Excel sheet
                 sheet.append([current_time.strftime('%Y-%m-%d %H:%M:%S'), name, file_path, confidence])
+                
+                # Save the workbook after appending
                 workbook.save(args["excel"])
-                consecutive_detections[name] = 0  # Reset the counter after writing to the Excel file
-                last_captured_times[name] = current_time  # Update the last captured time
+                
+                # Reset the counter and update the last captured time
+                consecutive_detections[name] = 0
+                last_captured_times[name] = current_time
 
     # Draw bounding boxes, names, and confidence scores on the frame
     for ((top, right, bottom, left), (name, confidence)) in zip(boxes, current_detections):
@@ -107,13 +116,26 @@ while True:
 
         cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
         y = top - 15 if top - 15 > 15 else top + 15
-        text = f"{name}: {confidence+0.1:.2f}"
+        text = f"{name}: {confidence:.2f}"
         cv2.putText(frame, text, (left, y), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
 
     cv2.imshow("video", frame)
     key = cv2.waitKey(1) & 0xFF
     if key == ord("q"):
         break
+
+    # Save data manually by pressing "s"
+    if key == ord("s"):
+        current_time = datetime.datetime.now()
+        filename = f"{current_time.strftime('%Y%m%d_%H%M%S%f')}.png"
+        file_path = os.path.join(args["output"], filename)
+        cv2.imwrite(file_path, frame)
+        
+        # Append data to the Excel sheet
+        sheet.append([current_time.strftime('%Y-%m-%d %H:%M:%S'), name, file_path, confidence])
+        
+        # Save the workbook after appending
+        workbook.save(args["excel"])
 
     time.sleep(DETECTION_INTERVAL)
 
